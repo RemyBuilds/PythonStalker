@@ -1,0 +1,175 @@
+import tkinter as tk
+import csv
+import os
+import requests as r
+import json
+
+# Keepa API key
+discord_webhook_url = 'webhook goes here'
+
+def scan_storefronts():
+    #change this to your apikey
+    apikey = 'keepa api key, CHANGE THIS'
+
+    seller_keys = get_seller_keys('stores.csv') 
+    for seller_key in seller_keys:
+        # URL for Keepa API
+        url = f'https://api.keepa.com/seller?key={apikey}&domain=1&seller={seller_key}&storefront=1'
+
+        # Request to Keepa
+        response = r.get(url)
+        API_Data = response.json()
+
+        # Extract ASIN list
+        asin_list = set(API_Data['sellers'][seller_key].get('asinList', []))
+
+        csv_filename = f"{seller_key}.csv"
+        file_path = os.path.join(folder_path, csv_filename)
+
+        # Check if file exists
+        if os.path.exists(file_path):
+            print(f"The file '{csv_filename}' exists in the folder.")
+            with open(file_path, 'r') as file:
+                csv_reader = csv.reader(file)
+                OldAsinList = set(row[0] for row in csv_reader)
+
+                # Find differences
+                NewAsins = asin_list - OldAsinList
+                CleanNewAsins = remove_newline_from_set(NewAsins)
+
+                # If there are new ASINs, send them to Discord
+                if CleanNewAsins:
+                    message = f"New ASINs for {seller_key}: {', '.join(CleanNewAsins)}"
+                    send_to_discord(discord_webhook_url, message)
+                    print(f"New ASINs for {seller_key} sent to Discord.")
+
+                    # Append new ASINs to CSV
+                    with open(file_path, 'a', newline='') as csvfile:
+                        csv_writer = csv.writer(csvfile)
+                        for asin in CleanNewAsins:
+                            csv_writer.writerow([asin])
+                    print(f"New ASINs appended to '{csv_filename}'.")
+                else:
+                    print(f"No new ASINs for {seller_key} to send to Discord or append to CSV.")
+        else:
+            print(f"The file '{csv_filename}' does not exist in the folder.")
+            with open(file_path, 'w', newline='') as csvfile:
+                csv_writer = csv.writer(csvfile)
+                csv_writer.writerows([[asin] for asin in asin_list])
+            print(f"CSV file '{csv_filename}' created successfully.")
+
+
+
+
+def send_test_message_to_discord(webhook_url, asin):
+    webhook_url = 'enter webhook url'
+
+    asin_link = f"https://amazon.com/dp/{asin}"
+    message = f"Test ASIN link: {asin_link}"
+    data = {"content": message}
+    headers = {"Content-Type": "application/json"}
+    response = r.post(webhook_url, data=json.dumps(data), headers=headers)
+    print("Test message response from Discord:", response.status_code, response.reason)
+    if response.status_code != 204:
+        print("Response body:", response.text)
+
+def remove_newline_from_set(input_set):
+    cleaned_set = set()
+    for input_string in input_set:
+        cleaned_string = input_string.replace('\n', '')
+        cleaned_set.add(cleaned_string)
+    return cleaned_set
+
+def send_to_discord(webhook_url, asin_set):
+    asin_links = [f"https://amazon.com/dp/{asin}" for asin in asin_set]
+    message = "\n".join(asin_links)
+    data = {"content": message}
+    headers = {"Content-Type": "application/json"}
+    response = r.post(webhook_url, data=json.dumps(data), headers=headers)
+    print("Response from Discord:", response.status_code, response.reason)
+    if response.status_code != 204:
+        print("Response body:", response.text)
+
+def get_seller_keys(filename):
+    keys = []
+    # Build the path relative to the current script's directory
+    file_path = os.path.join(os.path.dirname(__file__), filename)
+
+    try:
+        with open(file_path, mode='r') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                # Add the first element of each row to the list
+                keys.append(row[0])
+    except FileNotFoundError:
+        print(f"Error: The file '{filename}' was not found.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    return keys
+
+# Usage
+
+
+
+# List of seller keys from the stores.csv file
+seller_keys = get_seller_keys('stores.csv') 
+
+# File path for CSV
+
+folder_path = os.path.dirname(__file__)
+
+# Discord Webhook URL
+
+
+
+
+def on_add_button_clicked():
+    # Get the input text
+    input_text = input_box.get()
+    # Define the path relative to the script location
+    script_dir = os.path.dirname(__file__)  # Directory of the script
+    file_path = os.path.join(script_dir, 'stores.csv')
+    # Append the input text to the CSV file
+    with open(file_path, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([input_text])
+    print(f"Added '{input_text}' to Tracked Sellers")
+
+
+# Create the main window
+window = tk.Tk()
+window.title("I hate monthly bills")
+
+# Create an input text box
+def on_entry_click(event):
+    """Function to clear the placeholder text when the entry is clicked."""
+    if input_box.get() == 'Enter sellerID here':
+        input_box.delete(0, "end") # delete all the text in the entry
+        input_box.insert(0, '') #Insert blank for user input
+        input_box.config(fg='black')
+
+def on_focusout(event):
+    """Function to add the placeholder text if the box is empty."""
+    if input_box.get() == '':
+        input_box.insert(0, 'Enter sellerID here')
+        input_box.config(fg='grey')
+
+# Create the main window
+window = tk.Tk()
+window.title("I hate monthly bills")
+
+# Create an input text box with placeholder
+input_box = tk.Entry(window, fg='grey')
+input_box.insert(0, 'Enter sellerID here')
+input_box.bind("<FocusIn>", on_entry_click)
+input_box.bind("<FocusOut>", on_focusout)
+input_box.pack()
+
+# Create an 'Add' button
+add_button = tk.Button(window, text="Add", command=on_add_button_clicked)
+add_button1 = tk.Button(window, text="Scan Storefronts", command=scan_storefronts)
+add_button.pack()
+add_button1.pack()
+
+# Start the GUI event loop
+window.mainloop()
