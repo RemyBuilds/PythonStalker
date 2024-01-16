@@ -2,6 +2,78 @@ import requests as r
 import csv
 import os
 import json
+import tkinter as tk
+
+
+
+def send_product_embed(asin, data):
+    webhook_url = 'discord webhookurl'
+    asin_link = f"https://amazon.com/dp/{asin}"
+    selleramp_link = f"https://sas.selleramp.com/sas/lookup?SasLookup%5Bsearch_term%5D={asin}"
+    image_url = f"https://api.keepa.com/graphimage?key= + keepaapikey + &domain=1&asin={asin}"
+
+    embed = {
+        "title": "Product Information",
+        "description": data.get('title', 'N/A'),
+        "color": 5814783,
+        "fields": [
+            {"name": "ASIN", "value": asin, "inline": True},
+            {"name": "selleramp_link", "value": selleramp_link, "inline": True},
+            {"name": "ASIN Link", "value": asin_link, "inline": True},
+            {"name": "Category", "value": data.get('category', 'N/A'), "inline": True},
+            {"name": "Sales Rank", "value": data.get('sales_rank', 'N/A'), "inline": True},
+            {"name": "buyBoxPrice", "value": data.get('buyBoxPrice', 'N/A'), "inline": True},
+            {"name": "Avg 90-Day BB Price", "value": data.get('average_90_day_bb_price', 'N/A'), "inline": True},
+            {"name": "totalOfferCount", "value": data.get('totalOfferCount', 'N/A'), "inline": True},
+            {"name": "IsFBA", "value": data.get('isFBA', 'N/A'), "inline": True},
+            {"name": "UPC", "value": data.get('upc', 'N/A'), "inline": True}
+        ],
+        "image": {"url": image_url},
+        "footer": {"text": "Product Lookup"}
+    }
+
+    payload = {"embeds": [embed]}
+    headers = {"Content-Type": "application/json"}
+    response = r.post(webhook_url, data=json.dumps(payload), headers=headers)
+    print("Discord Response:", response.status_code, response.reason)
+
+def format_price(price):
+    price_str = str(price)
+    if len(price_str) <= 2:
+        return '0.' + price_str.zfill(2)
+    else:
+        return price_str[:-2] + '.' + price_str[-2:]
+
+
+def fetch_and_send_product_info(asin):
+    keepaapikey = ""
+    response = r.get(f"https://api.keepa.com/product?key= + keeapapikey + &domain=1&asin={asin}&stats=180&history=0&only-live-offers=1&buybox=1")
+    if response.status_code == 200:
+        json_data = json.loads(response.text)
+        product = json_data.get('products', [{}])[0]
+
+        sales_rank = product.get('stats', {}).get('current', [-1])[3]
+        buyBoxPrice = product.get('buyBoxPrice')
+        avg_90_day_bb_price = format_price(product.get('stats', {}).get('avg90', [0])[0])
+        offers = product.get('totalOfferCount')
+        fulfillment = 'FBA' if product.get('buyBoxIsFBA', False) else 'Other'
+
+        data = {
+            'category': product.get('categoryTree', [{}])[0].get('name', 'N/A'),
+            'sales_rank': 'N/A' if sales_rank == -1 else sales_rank,
+            'buyBoxPrice': format_price(buyBoxPrice) if buyBoxPrice is not None else 'N/A',
+            'average_90_day_bb_price': avg_90_day_bb_price,
+            'offers': offers,
+            'fulfillment': fulfillment,
+            'title': product.get('title', 'N/A'),
+            'upc': product.get('upcList', ['N/A'])[0]
+        }
+
+        send_product_embed(asin, data)
+    else:
+        print("Failed to retrieve data. Status code:", response.status_code)
+
+# Example usage:
 
 def send_test_message_to_discord(webhook_url, asin):
     asin_link = f"https://amazon.com/dp/{asin}"
@@ -21,15 +93,7 @@ def remove_newline_from_set(input_set):
         cleaned_set.add(cleaned_string)
     return cleaned_set
 
-def send_to_discord(webhook_url, asin_set):
-    asin_links = [f"https://amazon.com/dp/{asin}" for asin in asin_set]
-    message = "\n".join(asin_links)
-    data = {"content": message}
-    headers = {"Content-Type": "application/json"}
-    response = r.post(webhook_url, data=json.dumps(data), headers=headers)
-    print("Response from Discord:", response.status_code, response.reason)
-    if response.status_code != 204:
-        print("Response body:", response.text)
+
 
 def get_seller_keys(filename):
     keys = []
@@ -51,7 +115,7 @@ def get_seller_keys(filename):
 # Usage
 
 # Keepa API key
-apikey = 'keepa api key goes here'
+apikey = ''
 
 # List of seller keys from the stores.csv file
 seller_keys = get_seller_keys('stores.csv') 
@@ -61,7 +125,7 @@ seller_keys = get_seller_keys('stores.csv')
 folder_path = os.path.dirname(__file__)
 
 # Discord Webhook URL
-discord_webhook_url = 'discord webhook goes here'
+discord_webhook_url = ''
 
 for seller_key in seller_keys:
     # URL for Keepa API
@@ -89,9 +153,8 @@ for seller_key in seller_keys:
             CleanNewAsins = remove_newline_from_set(NewAsins)
 
             # If there are new ASINs, send them to Discord
-        if CleanNewAsins:
-            message = f"New ASINs for {seller_key}: {', '.join(CleanNewAsins)}"
-            send_to_discord(discord_webhook_url, message)
+        for asin in CleanNewAsins:
+            fetch_and_send_product_info(asin)
             print(f"New ASINs for {seller_key} sent to Discord.")
 
             # Append new ASINs to CSV
@@ -110,8 +173,47 @@ for seller_key in seller_keys:
         print(f"CSV file '{csv_filename}' created successfully.")
 
 
+def on_add_button_clicked():
+    # Get the input text
+    input_text = input_box.get()
+    # Define the path relative to the script location
+    script_dir = os.path.dirname(__file__)  # Directory of the script
+    file_path = os.path.join(script_dir, 'stores.csv')
+    # Append the input text to the CSV file
+    with open(file_path, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([input_text])
+    print(f"Added '{input_text}' to Tracked Sellers")
 
 
 
+window = tk.Tk()
+window.title("I hate monthly bills")
+
+def on_entry_click(event):
+    """Function to clear the placeholder text when the entry is clicked."""
+    if input_box.get() == 'Enter sellerID here':
+        input_box.delete(0, "end") # delete all the text in the entry
+        input_box.insert(0, '') #Insert blank for user input
+        input_box.config(fg='black')
+
+def on_focusout(event):
+    """Function to add the placeholder text if the box is empty."""
+    if input_box.get() == '':
+        input_box.insert(0, 'Enter sellerID here')
+        input_box.config(fg='grey')
 
 
+# Create an input text box with placeholder
+input_box = tk.Entry(window, fg='grey')
+input_box.insert(0, 'Enter sellerID here')
+input_box.bind("<FocusIn>", on_entry_click)
+input_box.bind("<FocusOut>", on_focusout)
+input_box.pack()
+
+# Create an 'Add' button
+add_button = tk.Button(window, text="Add", command=on_add_button_clicked)
+add_button.pack()
+
+# Start the GUI event loop
+window.mainloop()
