@@ -7,9 +7,7 @@ Create a folder and put this in the folder to contain the seller csv files, then
 should look like this
 
 randomfolder
-    ----> stores.csv
-    ----> moneyprinter.py
-    ---->it will generate files with the seller ID, don't freak out, means it is working
+    ----> stores.csv(you can add them as a batch to the CSV, or individually by the gui) + moneyprinter.py + it will generate files with the seller ID, don't freak out, means it is working
 
 the first time it is run, there will be no "new asins" just getting a baseline to compare things to.
 
